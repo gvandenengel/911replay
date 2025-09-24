@@ -1,37 +1,34 @@
-// 911 relay bot – forwards any message containing "/911" from GAME_CHAT_CHANNEL to MEDICS_CHANNEL
-// with verbose logging so you can see exactly what the bot sees & matches.
+// 911 relay bot – forwards any message containing "/911" from GAME_CHAT_CHANNEL (or any thread under it) to MEDICS_CHANNEL
+// with @Field Medic role ping and verbose logs.
 
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, ChannelType, PermissionsBitField } = require('discord.js');
 
-// ---------- env & startup checks ----------
+// ---------- env ----------
 const tok = process.env.BOT_TOKEN;
-const GAME_CHAT_CHANNEL = process.env.GAME_CHAT_CHANNEL_ID;
+const GAME_CHAT_CHANNEL = process.env.GAME_CHAT_CHANNEL_ID; // parent text channel id
 const MEDICS_CHANNEL = process.env.MEDICS_CHANNEL_ID;
+const FIELD_MEDIC_ROLE_ID = process.env.FIELD_MEDIC_ROLE_ID; // optional role ID to ping
 
-// optional: custom pattern via env; default matches "/911" anywhere (case-insensitive) and respects word boundary
-const PATTERN = process.env.FORWARD_PATTERN || String.raw`/911\b`;
+// default pattern: "/911" anywhere (case-insensitive)
+const PATTERN = process.env.FORWARD_PATTERN || String.raw`/911`;
 const regex = new RegExp(PATTERN, "i");
 
 function mask(s){ return s ? s.slice(0,8) + "..." : s }
 function log(...args){ console.log(new Date().toISOString(), "-", ...args) }
+function fail(msg){ console.error("[FATAL]", msg); process.exit(1); }
 
-if (!tok || typeof tok !== "string" || tok.trim() === "") {
-  console.error("[FATAL] BOT_TOKEN not set on the SERVICE Variables in Railway. Exiting.");
-  process.exit(1);
-}
-if (!GAME_CHAT_CHANNEL || !MEDICS_CHANNEL) {
-  console.error("[FATAL] GAME_CHAT_CHANNEL_ID or MEDICS_CHANNEL_ID missing. Exiting.");
-  process.exit(1);
-}
+if (!tok) fail("BOT_TOKEN not set on SERVICE Variables.");
+if (!GAME_CHAT_CHANNEL) fail("GAME_CHAT_CHANNEL_ID not set.");
+if (!MEDICS_CHANNEL) fail("MEDICS_CHANNEL_ID not set.");
 
 log("[BOOT] Env ok",
   "| token:", mask(tok),
   "| game:", GAME_CHAT_CHANNEL,
   "| medics:", MEDICS_CHANNEL,
+  "| role:", FIELD_MEDIC_ROLE_ID || "none",
   "| pattern:", `/${regex.source}/${regex.flags}`
 );
 
-// ---------- client ----------
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -41,59 +38,82 @@ const client = new Client({
 });
 
 // ---------- helpers ----------
-/** Pull all textual bits we might receive (plain content + common embed fields) */
 function extractTextFromMessage(message) {
-  const pieces = [];
-  if (message.content) pieces.push(message.content);
+  const parts = [];
+  if (message.content) parts.push(message.content);
 
-  if (message.embeds && message.embeds.length) {
+  if (message.embeds?.length) {
     for (const emb of message.embeds) {
-      if (emb.title) pieces.push(emb.title);
-      if (emb.description) pieces.push(emb.description);
+      if (emb.title) parts.push(emb.title);
+      if (emb.description) parts.push(emb.description);
       if (Array.isArray(emb.fields)) {
         for (const f of emb.fields) {
-          if (f?.name) pieces.push(f.name);
-          if (f?.value) pieces.push(f.value);
+          if (f?.name) parts.push(f.name);
+          if (f?.value) parts.push(f.value);
         }
       }
-      if (emb.footer?.text) pieces.push(emb.footer.text);
+      if (emb.footer?.text) parts.push(emb.footer.text);
     }
   }
-  return pieces;
+  return parts;
 }
 
-/** Light cleanup for common relay prefixes like "(Side) [Name]: " */
 function cleanupRelayPrefix(text) {
   return text.replace(/^\(.*?\)\s*\[[^\]]+\]:\s*/i, "").trim();
 }
 
 // ---------- events ----------
-client.once("clientReady", () => {
+client.once("clientReady", async () => {
   log(`✅ Ingelogd als ${client.user.tag}`);
-  log("Listening in channel", GAME_CHAT_CHANNEL, "→ forwarding to", MEDICS_CHANNEL);
+
+  try {
+    const relay = await client.channels.fetch(GAME_CHAT_CHANNEL);
+    const medics = await client.channels.fetch(MEDICS_CHANNEL);
+
+    log("[INFO] Relay channel:", relay?.name || relay?.id, "| type:", relay?.type);
+    log("[INFO] Medics channel:", medics?.name || medics?.id, "| type:", medics?.type);
+
+    const me = relay?.guild?.members?.me;
+    if (me && relay) {
+      const perms = relay.permissionsFor(me);
+      log("[PERMS] Relay -> View:", perms?.has(PermissionsBitField.Flags.ViewChannel),
+          "ReadHistory:", perms?.has(PermissionsBitField.Flags.ReadMessageHistory));
+    }
+    if (me && medics) {
+      const perms2 = medics.permissionsFor(me);
+      log("[PERMS] Medics -> View:", perms2?.has(PermissionsBitField.Flags.ViewChannel),
+          "Send:", perms2?.has(PermissionsBitField.Flags.SendMessages));
+    }
+
+    log("Listening in relay channel (and threads) → forwarding to medics channel.");
+  } catch (e) {
+    console.error("[WARN] Could not fetch channels at startup:", e.message);
+  }
 });
 
-// Backwards compatibility with v14 (your current warning mentioned this)
+// compat met v14
 client.once("ready", () => {
   log(`✅ (ready) Ingelogd als ${client.user.tag}`);
 });
 
 client.on("messageCreate", async (message) => {
   try {
-    // Only watch the relay channel
-    if (message.channel?.id !== GAME_CHAT_CHANNEL) return;
+    const ch = message.channel;
 
-    // Don't echo into medics if the relay and medics are same channel somehow
-    if (message.channel.id === MEDICS_CHANNEL) return;
+    // Alleen relay channel of threads daaronder
+    const inRelayChannel = ch?.id === GAME_CHAT_CHANNEL;
+    const inThreadUnderRelay = (ch?.type === ChannelType.PublicThread || ch?.type === ChannelType.PrivateThread)
+      && ch?.parentId === GAME_CHAT_CHANNEL;
+
+    if (!inRelayChannel && !inThreadUnderRelay) return;
 
     const parts = extractTextFromMessage(message);
     const joined = parts.join("\n").trim();
 
-    log(`[SEE] #${message.channel?.name || message.channel?.id} msg:${message.id} `
-      + `author:${message.author?.tag || message.author?.username || message.webhookId || "unknown"} `
-      + `| parts:${parts.length} | sample:`, (joined.slice(0, 120) + (joined.length > 120 ? "..." : "")));
+    const place = inRelayChannel ? `#${ch?.name || ch?.id}` : `(thread:${ch?.name || ch?.id}) -> parent:${ch?.parentId}`;
+    log(`[SEE] ${place} msg:${message.id} author:${message.author?.tag || message.webhookId || "unknown"} `
+      + `| parts:${parts.length} | sample:`, (joined.slice(0, 160) + (joined.length > 160 ? "..." : "")));
 
-    // If message had no textual parts, nothing to do
     if (!joined) {
       log("[SKIP] No textual content or embeds to scan.");
       return;
@@ -101,26 +121,25 @@ client.on("messageCreate", async (message) => {
 
     const matched = regex.test(joined);
     log(matched ? "[MATCH] pattern found in message." : "[NO MATCH] pattern not found.");
-
     if (!matched) return;
 
-    // Prefer plain content; if empty, fallback to joined text (embeds)
-    const raw = message.content && message.content.trim().length ? message.content : joined;
+    const raw = message.content?.trim().length ? message.content : joined;
     const cleaned = cleanupRelayPrefix(raw);
 
-    // Build a clean forward
     const medicsChannel = await client.channels.fetch(MEDICS_CHANNEL);
+    const mention = FIELD_MEDIC_ROLE_ID ? `<@&${FIELD_MEDIC_ROLE_ID}>` : '';
 
-    // Simple text (reliable). If je liever een nette embed wilt, laat het weten.
-    await medicsChannel.send(`🚨 **911 Call:** ${cleaned}`);
+    await medicsChannel.send({
+      content: `🚨 **911 Call:** ${cleaned} ${mention}`.trim(),
+      allowedMentions: FIELD_MEDIC_ROLE_ID ? { roles: [FIELD_MEDIC_ROLE_ID] } : { parse: [] }
+    });
 
-    log(`[FORWARDED] -> #${medicsChannel?.name || MEDICS_CHANNEL} | len=${cleaned.length}`);
+    log(`[FORWARDED] -> #${medicsChannel?.name || MEDICS_CHANNEL} | pingRole=${!!FIELD_MEDIC_ROLE_ID} | len=${cleaned.length}`);
   } catch (err) {
     console.error("[ERROR] while processing message:", err);
   }
 });
 
-// Global safety: log login failures
 client.on("error", (e) => console.error("[CLIENT ERROR]", e));
 client.on("shardError", (e) => console.error("[SHARD ERROR]", e));
 
