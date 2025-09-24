@@ -24,4 +24,9 @@ client.on('messageCreate', async (message) => {
   }
 });
 
+function mask(s){ return s ? s.slice(0,8)+'...' : s }
+console.log('ENV BOT_TOKEN exists?', !!process.env.BOT_TOKEN, 'starts:', mask(process.env.BOT_TOKEN||''));
+console.log('ENV GAME_CHAT_CHANNEL_ID:', process.env.GAME_CHAT_CHANNEL_ID);
+console.log('ENV MEDICS_CHANNEL_ID:', process.env.MEDICS_CHANNEL_ID);
+
 client.login(process.env.BOT_TOKEN);
