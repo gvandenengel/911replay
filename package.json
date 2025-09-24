@@ -1,0 +1,15 @@
+{
+  "name": "911-bot",
+  "version": "1.0.0",
+  "description": "Discord 911 relay bot for medics channel",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18.x"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}
