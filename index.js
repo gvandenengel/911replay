@@ -73,4 +73,58 @@ client.once("clientReady", () => {
   log("Listening in channel", GAME_CHAT_CHANNEL, "→ forwarding to", MEDICS_CHANNEL);
 });
 
-// Backwa
+// Backwards compatibility with v14 (your current warning mentioned this)
+client.once("ready", () => {
+  log(`✅ (ready) Ingelogd als ${client.user.tag}`);
+});
+
+client.on("messageCreate", async (message) => {
+  try {
+    // Only watch the relay channel
+    if (message.channel?.id !== GAME_CHAT_CHANNEL) return;
+
+    // Don't echo into medics if the relay and medics are same channel somehow
+    if (message.channel.id === MEDICS_CHANNEL) return;
+
+    const parts = extractTextFromMessage(message);
+    const joined = parts.join("\n").trim();
+
+    log(`[SEE] #${message.channel?.name || message.channel?.id} msg:${message.id} `
+      + `author:${message.author?.tag || message.author?.username || message.webhookId || "unknown"} `
+      + `| parts:${parts.length} | sample:`, (joined.slice(0, 120) + (joined.length > 120 ? "..." : "")));
+
+    // If message had no textual parts, nothing to do
+    if (!joined) {
+      log("[SKIP] No textual content or embeds to scan.");
+      return;
+    }
+
+    const matched = regex.test(joined);
+    log(matched ? "[MATCH] pattern found in message." : "[NO MATCH] pattern not found.");
+
+    if (!matched) return;
+
+    // Prefer plain content; if empty, fallback to joined text (embeds)
+    const raw = message.content && message.content.trim().length ? message.content : joined;
+    const cleaned = cleanupRelayPrefix(raw);
+
+    // Build a clean forward
+    const medicsChannel = await client.channels.fetch(MEDICS_CHANNEL);
+
+    // Simple text (reliable). If je liever een nette embed wilt, laat het weten.
+    await medicsChannel.send(`🚨 **911 Call:** ${cleaned}`);
+
+    log(`[FORWARDED] -> #${medicsChannel?.name || MEDICS_CHANNEL} | len=${cleaned.length}`);
+  } catch (err) {
+    console.error("[ERROR] while processing message:", err);
+  }
+});
+
+// Global safety: log login failures
+client.on("error", (e) => console.error("[CLIENT ERROR]", e));
+client.on("shardError", (e) => console.error("[SHARD ERROR]", e));
+
+client.login(tok).catch((e) => {
+  console.error("[FATAL] Login failed:", e);
+  process.exit(1);
+});
