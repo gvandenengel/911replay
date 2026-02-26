@@ -1,5 +1,5 @@
 // 911 relay bot – forwards any message containing "/admin" from GAME_CHAT_CHANNEL (or any thread under it) to MEDICS_CHANNEL
-// with @Field Medic role ping and verbose logs.
+// with @admin role ping and verbose logs.
 
 const { Client, GatewayIntentBits, ChannelType, PermissionsBitField } = require('discord.js');
 
