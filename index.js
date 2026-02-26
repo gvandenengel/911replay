@@ -1,4 +1,4 @@
-// 911 relay bot – forwards any message containing "/911" from GAME_CHAT_CHANNEL (or any thread under it) to MEDICS_CHANNEL
+// 911 relay bot – forwards any message containing "/admin" from GAME_CHAT_CHANNEL (or any thread under it) to MEDICS_CHANNEL
 // with @Field Medic role ping and verbose logs.
 
 const { Client, GatewayIntentBits, ChannelType, PermissionsBitField } = require('discord.js');
@@ -9,8 +9,8 @@ const GAME_CHAT_CHANNEL = process.env.GAME_CHAT_CHANNEL_ID; // parent text chann
 const MEDICS_CHANNEL = process.env.MEDICS_CHANNEL_ID;
 const FIELD_MEDIC_ROLE_ID = process.env.FIELD_MEDIC_ROLE_ID; // optional role ID to ping
 
-// default pattern: "/911" anywhere (case-insensitive)
-const PATTERN = process.env.FORWARD_PATTERN || String.raw`/911`;
+// default pattern: "/admin" anywhere (case-insensitive)
+const PATTERN = process.env.FORWARD_PATTERN || String.raw`/admin`;
 const regex = new RegExp(PATTERN, "i");
 
 function mask(s){ return s ? s.slice(0,8) + "..." : s }
