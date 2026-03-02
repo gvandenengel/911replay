@@ -1,4 +1,4 @@
-// 911 relay bot – forwards any message containing "/admin" from GAME_CHAT_CHANNEL (or any thread under it) to MEDICS_CHANNEL
+// 911 relay bot – forwards any message containing "/admin" from GAME_CHAT_CHANNEL (or any thread under it) to ADMIN_CALL
 // with @admin role ping and verbose logs.
 
 const { Client, GatewayIntentBits, ChannelType, PermissionsBitField } = require('discord.js');
@@ -6,8 +6,8 @@ const { Client, GatewayIntentBits, ChannelType, PermissionsBitField } = require(
 // ---------- env ----------
 const tok = process.env.BOT_TOKEN;
 const GAME_CHAT_CHANNEL = process.env.GAME_CHAT_CHANNEL_ID; // parent text channel id
-const MEDICS_CHANNEL = process.env.MEDICS_CHANNEL_ID;
-const FIELD_MEDIC_ROLE_ID = process.env.FIELD_MEDIC_ROLE_ID; // optional role ID to ping
+const ADMIN_CALL = process.env.ADMIN_CALL_ID;
+const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID; // optional role ID to ping
 
 // default pattern: "/admin" anywhere (case-insensitive)
 const PATTERN = process.env.FORWARD_PATTERN || String.raw`/admin`;
@@ -19,13 +19,13 @@ function fail(msg){ console.error("[FATAL]", msg); process.exit(1); }
 
 if (!tok) fail("BOT_TOKEN not set on SERVICE Variables.");
 if (!GAME_CHAT_CHANNEL) fail("GAME_CHAT_CHANNEL_ID not set.");
-if (!MEDICS_CHANNEL) fail("MEDICS_CHANNEL_ID not set.");
+if (ADMIN_CALL) fail("ADMIN_CALL_ID not set.");
 
 log("[BOOT] Env ok",
   "| token:", mask(tok),
   "| game:", GAME_CHAT_CHANNEL,
-  "| medics:", MEDICS_CHANNEL,
-  "| role:", FIELD_MEDIC_ROLE_ID || "none",
+  "| medics:", ADMIN_CALL,
+  "| role:", ADMIN_ROLE_ID || "none",
   "| pattern:", `/${regex.source}/${regex.flags}`
 );
 
